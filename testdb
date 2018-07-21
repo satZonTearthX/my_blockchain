@@ -1,25 +1,38 @@
 #!/usr/bin/python3
 
 import pymysql
+import copy
 from blockchain.config import *
 
 class Mysql_service(object):
-    db = pymysql.connect(host=DB_HOST, user=DB_ID, password=DB_PASSWORD, db=DB_DTTABASE)
-    cursor = db.cursor()
     def __init__(self):
         print("connection on")
+
+    def get_db_and_cursor(self):
+
+        db = pymysql.connect(host=DB_HOST, user=DB_ID, password=DB_PASSWORD, db=DB_DTTABASE)
+        cursor = db.cursor()
+        return db, cursor
+
+    def get_db_and_dict_cursor(self):
+
+        db = pymysql.connect(host=DB_HOST, user=DB_ID, password=DB_PASSWORD, db=DB_DTTABASE)
+        cursor = db.cursor(pymysql.cursors.DictCursor)
+        return db, cursor
 
     def register(self,username,password,email,role): #self,user,email,password,role
         sql='''insert into all_users (user_name,password,email,role,account,credit,user_port,user_host)\
                values("%s","%s","%s","%s",0.0,100,3036,"0000") ''' % (username, password,email,role)
         try:
-            self.cursor.execute(sql)
+            db, cursor = self.get_db_and_cursor()
+            cursor.execute(sql)
             # 提交到数据库执行
-            self.db.commit()
+            db.commit()
             print('register successful')
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
         # 关闭数据库连接
 
 #####################修改个人信息#######################
@@ -32,12 +45,92 @@ class Mysql_service(object):
     #     except:
     #         self.db.rollback()
 
+    """获取区块链长度"""
+
+    # def get_length(self):
+    #     cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+    #     sql = 'select count(1) as num from block_tem'
+    #     try:
+    #         # 执行sql语句
+    #         cursor.execute(sql)
+    #         res=cursor.fetchall()
+    #         return res[0]['num']
+    #         # cursor.fetchall()
+    #         # cursor.rowcount
+    #         # 提交到数据库执行
+    #     except:
+    #         # 如果发生错误则回滚
+    #         self.db.rollback()
+    #     return cursor.rowcount
+
+    def get_length(self):
+        db, cursor = self.get_db_and_cursor()
+        sql = '''select count(*) from block_header'''
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            # 提交到数据库执行
+        except Exception as e:
+            print(e)
+            # 如果发生错误则回滚
+            db.rollback()
+        print(cursor.fetchone())
+        print(cursor.rowcount)
+        return cursor.rowcount
+    """获得节点中的所有IP"""
+
+    def get_all_ip(self):
+        address = []
+        db, cursor = self.get_db_and_dict_cursor()
+        sql = '''select user_name, user_host,user_port from all_users'''
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            data = cursor.fetchall()
+            # cursor.rowcount
+            # 提交到数据库执行
+        except Exception as e:
+            print(e)
+            # 如果发生错误则回滚
+            db.rollback()
+
+        for record in data:
+            string = "%s" % record['user_host'] + ":" + "%s" % record['user_port']
+            address.append(string)
+
+        return address
+
+    def dict_get_user_info_byname(self,user_name):
+        data_result = []
+        data_total = 0
+        # 存放结果的字典数组与数量
+        db,cursor = self.get_db_and_dict_cursor()
+        sql = "select * from all_users where user_name='%s'" % (user_name)
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            data=cursor.fetchall()
+
+            #cursor.rowcount
+            # 提交到数据库执行
+
+            for row in data:
+                data_result.append(row)
+                data_total=data_total+1
+            #self.db.commit()
+
+        except Exception as e:
+            print(e)
+            db.rollback()
+
+        return data_total, data_result
 
     def getUserInfoByUsername(self,username):
         sql="select * from all_users where user_name='%s'" % (username)
+        db, cursor = self.get_db_and_cursor()
         try:
-            self.cursor.execute(sql)
-            results = self.cursor.fetchall()
+            cursor.execute(sql)
+            results = cursor.fetchall()
             print(results)
             for row in results:
                 name=row[0]
@@ -47,16 +140,21 @@ class Mysql_service(object):
                 address = row[4]
                 account=row[5]
                 credit=row[6]
-            return name,password,role,email,address,account,credit
-        except:
-            self.db.rollback()
+                user_port=row[7]
+                user_host=row[8]
+            return name,password,role,email,address,account,credit,user_port,user_host
+        except Exception as e:
+            print(e)
+            db.rollback()
+
+
 
     def search_for_credity_byusername(self, username):
 
         data_result = []
         data_total = 0
         # 存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
         sql = '''select * from all_users where user_name="%s"\
             and credit<60 order by credit desc''' % username
@@ -73,9 +171,10 @@ class Mysql_service(object):
                 data_result.append(row)
                 data_total = data_total + 1
             # self.db.commit()
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         return data_total, data_result
 
@@ -85,7 +184,7 @@ class Mysql_service(object):
         data_result=[]
         data_total=0
         #存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
         sql='''select * from all_goods where goods_name="%s" order by price_ava asc''' % goods_name
 
@@ -101,21 +200,18 @@ class Mysql_service(object):
                 data_result.append(row)
                 data_total=data_total+1
             #self.db.commit()
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         return data_total,data_result
 
-
-    def close_db(self):
-        self.db.close()
-# 关闭数据库连接
-
+#
+#检查
     def check(self,user):
-
-        check_sql = "select * from all_users where login_name='%s'" % self.user
-        cur=self.db.cursor()
+        check_sql = "select * from all_users where user_name='%s'" % user
+        db, cur=self.get_db_and_cursor()
         cur.execute(check_sql)
         if cur.rowcount==0:
             return True
@@ -133,7 +229,7 @@ class Mysql_service(object):
 
         data_total = 0
         # 存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
         sql = '''select * from all_logistics '''
 
@@ -144,9 +240,10 @@ class Mysql_service(object):
             # cursor.rowcount
             # 提交到数据库执行
 
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         for row in data:
             data_result_priceorder.append(row)
@@ -164,18 +261,19 @@ class Mysql_service(object):
 
     ##########获得指定用户地址"""
 
-    def get_ip(self, login_name: str):
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
-        sql = '''select user_host,user_port from all_users where login_name = "%s" ''' % login_name
+    def get_ip(self, user_name: str):
+        db, cursor = self.get_db_and_dict_cursor()
+        sql = '''select user_host,user_port from all_users where user_name = "%s" ''' % user_name
         try:
             # 执行sql语句
             cursor.execute(sql)
             data = cursor.fetchone()
             # cursor.rowcount
             # 提交到数据库执行
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         temp = str(data['user_port'])
         string = data['user_host'] + ":" + temp
@@ -189,7 +287,7 @@ class Mysql_service(object):
         data_result=[]
         data_total=0
         #存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
         sql='''select * from all_goods where goods_name="%s" \
             and goods_stat="for sale" order by price_ava asc''' % goods_name
@@ -206,18 +304,49 @@ class Mysql_service(object):
                 data_result.append(row)
                 data_total=data_total+1
             #self.db.commit()
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         return data_total,data_result
+
+    def search_for_commodity(self):
+
+        data_result=[]
+        data_total=0
+        #存放结果的字典数组与数量
+        db, cursor = self.get_db_and_dict_cursor()
+
+        sql='''select * from all_goods where goods_stat="for sale"\
+             order by price_ava asc'''
+
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            data=cursor.fetchall()
+
+            #cursor.rowcount
+            # 提交到数据库执行
+
+            for row in data:
+                data_result.append(row)
+                data_total=data_total+1
+            #self.db.commit()
+        except Exception as e:
+            print(e)
+            # 如果发生错误则回滚
+            db.rollback()
+
+        return data_total,data_result
+
 
     def search_for_commodity_byseller(self,seller_name):
 ####查商家的所有商品
         data_result=[]
         data_total=0
         #存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
         sql='''select * from all_goods where goods_seller="%s" \
             and goods_stat="for sale" order by price_ava asc''' % seller_name
@@ -234,9 +363,10 @@ class Mysql_service(object):
                 data_result.append(row)
                 data_total=data_total+1
             #self.db.commit()
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         return data_total,data_result
 
@@ -244,7 +374,7 @@ class Mysql_service(object):
 
 ###################################改
     def confirm_goods_arrival(self,goods_id):
-        cursor = self.db.cursor()
+        db, cursor = self.get_db_and_cursor()
         #改商品的销售状态
         sql = '''update all_goods set goods_stat="sold" where goods_id=%d''' % goods_id
 
@@ -252,14 +382,15 @@ class Mysql_service(object):
             # 执行sql语句
             cursor.execute(sql)
             # 提交到数据库执行
-            self.db.commit()
-        except:
+            db.commit()
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
 
-    def modify_user_info(self,username,password=None,address=None,account=-1,email=None,host=None,port=-1):
-        cursor1 = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+    def modify_user_info(self,username,password=None,address=None,account=-1,email=None,host=None,port=-1,credit=-1):
+        db, cursor1 = self.get_db_and_dict_cursor()
 
         sql = '''select * from all_users where user_name="%s" ''' % username
 
@@ -276,16 +407,18 @@ class Mysql_service(object):
             self.email = data["email"] if email is None else email
             self.user_host = data["user_host"] if host is None else host
             self.user_port = data["user_port"] if port == -1 else port
+            self.credit=data["credit"]  if credit==-1 else credit
 
             #判断哪些有修改
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         print(cursor1.rowcount)
 
-        sql2 = '''update all_users set password="%s",address="%s",account=%lf,email="%s", user_port=%d, user_host="%s"\
-                        where user_name="%s" ''' % (self.password, self.address, self.account,self.email,self.user_port,self.user_host, username)
+        sql2 = '''update all_users set password="%s",email="%s",address="%s",account=%f,credit=%d, user_port=%d, user_host="%s" \
+                        where user_name="%s" ''' % (self.password, self.email,self.address, self.account,self.credit,self.user_port,self.user_host, username)
 
         # cursor2 = self.db.cursor(cursor=pymysql.cursors.DictCursor)
         # cursor1.scroll(0,mode='absolute')
@@ -294,15 +427,16 @@ class Mysql_service(object):
             cursor1.execute(sql2)
             print(cursor1.rowcount)
             # 提交到数据库执行
-            self.db.commit()
-        except:
+            db.commit()
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
 ######################################增
     #增加临时交易记录
     def add_tem_block(self):
-        cursor = self.db.cursor()
+        db, cursor = self.get_db_and_cursor()
         sql_create='''CREATE TABLE `block_tem` \
           (`sales_id` int(11) NOT NULL,\
           `seller_name` varchar(11) NOT NULL,\
@@ -331,16 +465,17 @@ class Mysql_service(object):
             cursor.execute(sql_create)
             #print(cursor.rowcount)
             # 提交到数据库执行
-            self.db.commit()
-        except:
+            db.commit()
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
             print("operation failed")
-            self.db.rollback()
+            db.rollback()
 
 
     #在临时区块增加交易记录
     def add_sale_to_tem_block(self,sales_id,seller_name,buyer_name,amount,goods_name,sales_time,arrive_time,sales_type,sales_condition):
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
         sql_block_insert='''insert into blocktem( '''
 
 
@@ -351,9 +486,9 @@ class Mysql_service(object):
     def add_log_info(self,logger_name,init_price,ava_price,ava_time):
         data_total = 0
         # 存放结果的字典数组与数量
-        cursor = self.db.cursor(cursor=pymysql.cursors.DictCursor)
+        db, cursor = self.get_db_and_dict_cursor()
 
-        sql = '''select * from all_users where login_name="%s" ''' % logger_name
+        sql = '''select * from all_users where user_name="%s" ''' % logger_name
 
 
         try:
@@ -365,9 +500,10 @@ class Mysql_service(object):
             # cursor.rowcount
             # 提交到数据库执行
 
-        except:
+        except Exception as e:
+            print(e)
             # 如果发生错误则回滚
-            self.db.rollback()
+            db.rollback()
 
         sql = '''insert into all_logger(init_price,ava_price,ava_time,logger_name,logger_host,logger_port)\
                    values(%f,%f,%d,"%s","%s",%d) ''' \
@@ -378,17 +514,18 @@ class Mysql_service(object):
             cursor.execute(sql)
             print(cursor.rowcount)
             # 提交到数据库执行
-            self.db.commit()
-        except:
+            db.commit()
+        except Exception as e:
             # 如果发生错误则回滚
+            print(e)
             print("insert failed")
-            self.db.rollback()
+            db.rollback()
 
     #def add_block(self):
 
     #增加商品
     def insert_commodity(self, goods_id,goods_name, goods_amount, goods_seller, goods_stripeID, goods_price, seller_host, seller_port):
-        cursor = self.db.cursor()
+        db, cursor = self.get_db_and_cursor()
         price_ava=goods_price / goods_amount
         sql = '''insert into all_goods(goods_id,goods_name,goods_amount,goods_seller,goods_stripeID,goods_price,goods_stat,price_ava
         ,seller_host,seller_port)  values(%d,"%s",%d,"%s","%s","%f","for sale",%f,"%s",%d) ''' \
@@ -400,10 +537,78 @@ class Mysql_service(object):
             cursor.execute(sql)
             print(cursor.rowcount)
             # 提交到数据库执行
-            self.db.commit()
-        except:
+            db.commit()
+        except Exception as e:
             # 如果发生错误则回滚
             print("insert failed")
-            self.db.rollback()
+            db.rollback()
 
-\
+    def get_block_tem(self):
+        ####查找所有临时交易
+        data_result = []
+        data_total = 0
+        # 存放结果的字典数组与数量
+        db, cursor = self.get_db_and_dict_cursor()
+        sql = '''select * from block_tem '''
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            data = cursor.fetchall()
+
+            # cursor.rowcount
+            # 提交到数据库执行
+
+            for row in data:
+                data_result.append(row)
+                data_total = data_total + 1
+                # self.db.commit()
+        except Exception as e:
+
+            # 如果发生错误则回滚
+            print(e)
+
+        return data_total, data_result
+
+    """返回指定区块头的内容"""
+
+    ########返回指定区块头的内容"""
+
+    def get_block_header(self, index: int):
+        db, cursor = self.get_db_and_dict_cursor()
+        sql = '''SELECT * from block_header limit %d,1''' % (index-1)
+        # data=[]
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            print("success")
+            data = cursor.fetchone()
+            # data.append(data1)
+            # cursor.rowcount
+            # 提交到数据库执行
+        except Exception as e:
+            print(e)
+            print("get_block_header failed")
+            # 如果发生错误则回滚
+
+        return data
+
+    """返回指定区块体的内容"""
+
+    def get_block_body(self, index: int):
+        db, cursor = self.get_db_and_dict_cursor()
+        block_body = "block_body" + '%d' % index
+        sql = '''select * from %s''' % block_body
+
+        try:
+            # 执行sql语句
+            cursor.execute(sql)
+            print("success get body")
+            data = cursor.fetchall()
+            # cursor.rowcount
+            # 提交到数据库执行
+        except Exception as e:
+            print(e)
+            # 如果发生错误则回滚
+            db.rollback()
+
+        return data
